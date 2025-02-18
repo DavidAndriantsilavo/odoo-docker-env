@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import requests
+from odoo import models
 from werkzeug.urls import url_join
 
-from odoo import models
+from odoo.exceptions import UserError, ValidationError
 
 
 def get_request_headers(auth_token):
@@ -43,7 +44,14 @@ class StockPicking(models.Model):
                 'tel': partner.phone,
                 'email': partner.email,
             },
-            'parcels': [],
+            'parcels': [
+                {
+                    'weight': line.product_id.weight,
+                    'shipper_reference': self.carrier_id.name,
+                    'comment': line.description_picking,
+                    'value': line.product_id.lst_price * line.quantity,
+                } for line in self.move_ids_without_package
+            ],
             'printtype': 'zpl',
         }
 
@@ -51,7 +59,8 @@ class StockPicking(models.Model):
 
     def easy_delivery_retrieve_label(self):
         """
-        Retrieve the necessary information for printing the shipping label
+        Retrieve the necessary information for printing the shipping label.
+        Creates 1 ir.attachment if the response has data['pdf'], or 1 zpl for each data['labels']
         :return:
         """
         self.ensure_one()
@@ -61,3 +70,25 @@ class StockPicking(models.Model):
             request_response = requests.post(request_url, json=self.easy_delivery_get_delivery_data(),
                                              headers=get_request_headers(active_config.auth_token))
             json_response = request_response.json()
+            if json_response['status'] == 'success':
+                datas = []
+                if json_response['data']['pdf']:
+                    datas.append({
+                        'name': json_response['data']['parcel_ref'] + '.pdf',
+                        'datas': json_response['data']['pdf'],
+                        'type': 'binary',
+                        'mimetype': 'application/pdf',
+                        'res_model': 'stock.picking',
+                        'res_id': self.id,
+                    })
+                else:
+                    for label in json_response['data']['labels']:
+                        datas.append({
+                            'name': label['shipper_ref'],
+                            'raw': label['zpl'],
+                            'res_model': 'stock.picking',
+                            'res_id': self.id,
+                        })
+                self.env['ir.attachment'].create(datas)
+            else:
+                raise ValidationError(json_response['error']['type'] + ': ' + json_response['error']['message'])

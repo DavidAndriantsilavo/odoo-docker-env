@@ -33,7 +33,7 @@
         <menuitem id="menu_easy_delivery_api_configuration"
                   name="Easy Delivery API Configuration"
                   action="action_easy_delivery_api_configuration"
-                  parent="website.menu_website_global_configuration"
+                  parent="stock.menu_stock_config_settings"
                   sequence="60"/>
     </data>
 </odoo>
